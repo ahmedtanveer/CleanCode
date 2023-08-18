@@ -2,7 +2,12 @@ name: Build
 on:
   pull_request:
     branches: [ main ]
-
+  workflow_dispatch:
+    inputs:
+      build-artifacts:
+        type: boolean
+        required: true
+        default: false
 jobs:
   build:
 
@@ -29,3 +34,36 @@ jobs:
       run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName!~AcceptanceTests"
       env:
         ConnectionStrings__DefaultConnection: Server=.;Database=CleanArchitectureDb-Test;User=sa;Password=Your_password123;MultipleActiveResultSets=true;
+    - name: Publish website
+      if: ${{ inputs.build-artifacts == true }}
+      run: |
+        dotnet publish --configuration Release --runtime win-x86 --self-contained --output ./publish
+        cd publish
+        zip -r ./publish.zip .
+      working-directory: ./src/Web/        
+
+    - name: Upload website artifact (website)
+      if: ${{ inputs.build-artifacts == true }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: website
+        path: ./src/Web/publish/publish.zip
+        if-no-files-found: error
+    
+    - name: Create EF Core migrations bundle
+      if: ${{ inputs.build-artifacts == true }}
+      run: |
+        dotnet new tool-manifest
+        dotnet tool install dotnet-ef --prerelease
+        dotnet ef migrations bundle --configuration Release -p ./src/Infrastructure/ -s ./src/Web/ -o efbundle.exe
+        zip -r ./efbundle.zip efbundle.exe
+      env:
+        SkipNSwag: True
+
+    - name: Upload EF Core migrations bundle artifact (efbundle)
+      if: ${{ inputs.build-artifacts == true }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: efbundle
+        path: ./efbundle.zip
+        if-no-files-found: error
